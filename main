@@ -1,0 +1,175 @@
+import yfinance as yf ## permet de se connecter à Yahoo Finance et de télécharger les données financières
+import pandas as pd 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+## ETAPE 1: IDENTIFICATION DES ACTIFS
+print("ÉTAPE 1 : IDENTIFICATION DES ACTIFS ---")
+# 1. Sélection d'un panier d'actifs diversifiés
+tickers = ['AAPL', 'TLT', 'JNJ', 'KO', 'GLD','BTC-USD','TTE.PA','VNQ','DBA','EEM'] 
+
+# 2. Récupération des données de prix ajustés depuis Yahoo Finance
+print("Téléchargement des données sur Yahoo Finance...")
+data = yf.download(tickers, start='2021-08-01', auto_adjust=True)['Close'] ## ecours sur environ 5 ans
+
+# 3. Vérification que les données ont été correctement téléchargées
+print(" APERÇU DES PREMIERS COURS")
+print(data.head())
+
+print("CALCUL DES RENDEMENTS QUOTIDIENS ")
+
+# 1. Calcul des variations quotidiennes en %
+returns = data.pct_change().dropna()
+
+# 2. Affichage des premières lignes pour vérifier
+print(returns.head())
+
+print("MATRICE DE CORRÉLATION DES ACTIFS")
+
+# Calcul de la matrice
+corr_matrix = returns.corr()
+
+# Affichage du tableau brut dans le terminal
+print(corr_matrix)
+
+# Création de la figure
+plt.figure(figsize=(9, 7))
+
+# Génération de la heatmap avec seaborn
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1, fmt=".2f")
+
+# Titre et affichage
+plt.title('Matrice de Corrélation Markowitz')
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+##ETAPE 2: calcul du risque et du rendement de chaque actif
+
+print(" CALCUL DU RISQUE ET DU RENDEMENT DE CHAQUE ACTIF")
+# Calcul du rendement moyen annuel
+mean_returns = returns.mean() * 252  #  Nombre de jours d'ouverture de marché par an
+# Calcul de la volatilité/ risque annuelle (écart-type)
+volatilité = returns.std() * np.sqrt(252)
+
+print(mean_returns)
+print(volatilité)
+
+# 1. Création d'un DataFrame récapitulatif
+summary_df = pd.DataFrame({
+    'Rendement Annuel (%)': mean_returns * 100,
+    'Volatilité Annuelle (%)': volatilité * 100 })
+
+# 2. Ajout du Ratio de Sharpe individuel (Rendement / Risque)
+summary_df['Ratio de Sharpe'] = summary_df['Rendement Annuel (%)'] / summary_df['Volatilité Annuelle (%)']
+
+# 3. Arrondir les chiffres à 2 décimales pour la lisibilité
+summary_df = summary_df.round(2)
+
+print("RÉCAPITULATIF RENDEMENT ET RISQUE ")
+print(summary_df)
+
+
+
+
+
+
+## ETAPE 3: Calcul de la frontière efficiente et du portefeuille optimal
+print(" ÉTAPE 3 : CALCUL DE LA FRONTIÈRE EFFICIENTE ")
+
+##1.Calcul de la matrice de covariance des rendements
+matrice_covariance = returns.cov() * 252  # Covariance annualisée
+
+##Crée des conteneurs pour stocker les résultats des portefeuilles simulés
+rendements_portefeuilles = []
+risques_portefeuilles = []
+Ratios_Sharpe_portefeuilles = []
+poids_portefeuilles = []
+
+
+##2. Génération de portefeuilles aléatoires
+print("Génération de portefeuilles aléatoires...")
+nombre_portefeuilles = 300000
+Nombre_actifs = len(returns.columns)
+taux_rendement_sans_risque = 0.025  # Taux de rendement sans risque (2.5% par an au vu des actfs selectionnés)
+
+for i in range(nombre_portefeuilles):
+    # Génération de poids aléatoires pour chaque actif## c'est a dire le pourcentage de chaque actif dans le portefeuille
+    poids_aleatoire = np.random.random(Nombre_actifs)## creer 10 chiffres aléatoires
+    poids_aleatoire /= np.sum(poids_aleatoire)  # Normalisation pour que la somme des poids soit égale à 1 (donc on obtient une liste de 10 chiffres aléatoires dont la somme est égale à 1)
+    ##calcul de la performance de chaque portefeuille simulé
+    rendement_portefeuilles=np.dot(poids_aleatoire, mean_returns)  # Rendement attendu du portefeuille
+    volatilité_portefeuille=np.sqrt(np.dot(np.transpose(poids_aleatoire), np.dot(matrice_covariance, poids_aleatoire)))  # Risque du portefeuille
+    Ratio_Sharpe_portefeuille = (rendement_portefeuilles - taux_rendement_sans_risque) / volatilité_portefeuille if volatilité_portefeuille != 0 else 0  # Ratio de Sharpe du portefeuille
+    rendements_portefeuilles.append(rendement_portefeuilles)
+    risques_portefeuilles.append(volatilité_portefeuille)
+    Ratios_Sharpe_portefeuilles.append(Ratio_Sharpe_portefeuille)
+    poids_portefeuilles.append(poids_aleatoire)
+
+##convertir les resultats en arrays numpy
+
+rendements_portefeuilles = np.array(rendements_portefeuilles)
+risques_portefeuilles = np.array(risques_portefeuilles)
+Ratios_Sharpe_portefeuilles = np.array(Ratios_Sharpe_portefeuilles)
+poids_portefeuilles = np.array(poids_portefeuilles)
+
+#print(rendements_portefeuilles)
+#print(risques_portefeuilles)
+#print(Ratios_Sharpe_portefeuilles)
+
+##identification du portefeuille optimal (maximisation du ratio de Sharpe, minimis&ation )
+ratios_optimal = np.argmax(Ratios_Sharpe_portefeuilles)
+risques_minimal = np.argmin(risques_portefeuilles)
+
+##ETAPE 3 BIS: Tracer de la frontière efficiente et du portefeuille optimal
+print(" ÉTAPE 3 BIS : TRACER DE LA FRONTIÈRE EFFICIENTE ET DU PORTEFEUILLE OPTIMAL ")
+plt.figure(figsize=(10, 7))
+# Tracé de la frontière efficiente
+plt.scatter(risques_portefeuilles, rendements_portefeuilles, c=Ratios_Sharpe_portefeuilles, cmap='viridis', marker='o', s=10, alpha=0.3)
+plt.colorbar(label='Ratio de Sharpe')
+# 1. Portefeuille Optimal (Max Sharpe) - Étoile rouge
+plt.scatter(risques_portefeuilles[ratios_optimal], rendements_portefeuilles[ratios_optimal], color='red', marker='*', s=250, label='Max Sharpe')
+
+# 2. Portefeuille Risque Minimal - Cercle bleu
+plt.scatter(risques_portefeuilles[risques_minimal], rendements_portefeuilles[risques_minimal], color='blue', marker='o', s=150, label='Min Volatilité')
+
+
+# Titres et légende
+plt.title('Frontière Efficiente de Markowitz (Simulation Monte Carlo)')
+plt.xlabel('Volatilité Annuelle (Risque)')
+plt.ylabel('Rendement Annuel Espéré')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+##Recuperer l'etoile rouge (portefeuille optimal) et le cercle bleu (portefeuille risque minimal) et recuperer les poids de chaque actif dans ces portefeuilles
+poids_optimal = poids_portefeuilles[ratios_optimal]
+poids_minimal = poids_portefeuilles[risques_minimal]
+##On a repéré deux lignes magiques : Le numéro de ligne de l'étoile rouge (ratios_optimal).Le numéro de ligne du cercle bleu (risques_minimal).
+## donc on dispose de deux liste mais on ne sait pas encore quel actif est associé à quel poids. 
+
+## 1. Affichage du Portefeuille Optimal (Étoile Rouge)
+print("\n=== COMPOSITION DU PORTEFEUILLE OPTIMAL : etoile rouge ===")
+print(f"Rendement espéré : {rendements_portefeuilles[ratios_optimal]*100:.2f}%")
+print(f"Risque (Volatilité): {risques_portefeuilles[ratios_optimal]*100:.2f}%")
+print(f"Ratio de Sharpe   : {Ratios_Sharpe_portefeuilles[ratios_optimal]:.2f}")
+print("Répartition des poids :")
+for actif, poids in zip(returns.columns, poids_optimal):
+    print(f"  • {actif:8s} : {poids * 100:6.2f}%")
+
+## 2. Affichage du Portefeuille à Risque Minimal (Cercle Bleu)
+print("\n=== COMPOSITION DU PORTEFEUILLE À RISQUE MINIMAL ===")
+print(f"Rendement espéré : {rendements_portefeuilles[risques_minimal]*100:.2f}%")
+print(f"Risque (Volatilité): {risques_portefeuilles[risques_minimal]*100:.2f}%")
+print(f"Ratio de Sharpe   : {Ratios_Sharpe_portefeuilles[risques_minimal]:.2f}")
+print("Répartition des poids :")
+
+# Association des noms d'actifs aux pourcentages minimaux
+for actif, poids in zip(returns.columns, poids_minimal):
+    print(f"  • {actif:8s} : {poids * 100:6.2f}%")
+
